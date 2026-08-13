@@ -1,0 +1,13 @@
+[Unit]
+Description=Mirror Plasma notification popups to additional monitors
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/plasma-notification-mirror
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
