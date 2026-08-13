@@ -33,5 +33,5 @@ install(FILES config/config.example.ini
 )
 
 install(FILES systemd/plasma-notification-mirror.service
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/systemd/user
 )

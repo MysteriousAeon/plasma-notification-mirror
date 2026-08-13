@@ -14,11 +14,12 @@ Plasma normally shows a notification popup on only one monitor. Plasma Notificat
 - Countdown pauses while the pointer is over a popup
 - Manual close button
 - Existing notifications compact when one is dismissed
-- Application icon support via `app_icon`, `image-path`/`image_path`, and `desktop-entry` fallbacks
+- Application icon support via `app_icon`, `image-path` / `image_path`, and `desktop-entry` fallbacks
 - Typed D-Bus monitoring: notifications are mirrored only after the notification daemon accepts them and returns their notification ID
 - Handles notification replacement and `NotificationClosed` events
 - Configurable width, lifetime, margins, stack gap, and maximum popup count
-- User-level systemd service; no root process required
+- User-level systemd service
+- No root process required
 
 ## Requirements
 
@@ -26,7 +27,8 @@ Plasma normally shows a notification popup on only one monitor. Plasma Notificat
 - Qt 6
 - `layer-shell-qt`
 - CMake
-- `libsystemd` / sd-bus (used for the D-Bus monitoring API)
+- `libsystemd` / sd-bus
+- `pkgconf`
 
 ### Arch Linux / CachyOS
 
@@ -39,35 +41,59 @@ sudo pacman -S --needed cmake qt6-base layer-shell-qt systemd-libs pkgconf
 ```bash
 git clone https://github.com/MysteriousAeon/plasma-notification-mirror.git
 cd plasma-notification-mirror
+
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
 ## Install for the current user
 
+Install the binary, example configuration, and systemd user service under `~/.local`:
+
 ```bash
-mkdir -p ~/.local/bin ~/.config/systemd/user
-cp build/plasma-notification-mirror ~/.local/bin/plasma-notification-mirror
-cp systemd/plasma-notification-mirror.service ~/.config/systemd/user/
+cmake --install build --prefix "$HOME/.local"
+
 systemctl --user daemon-reload
 systemctl --user enable --now plasma-notification-mirror.service
 ```
 
-No configuration file is required. With two monitors, the first non-primary monitor is selected automatically.
+No configuration file is required.
+
+With two monitors, the first non-primary monitor is selected automatically.
+
+### Manual installation
+
+If you prefer to install the files manually:
+
+```bash
+mkdir -p ~/.local/bin ~/.config/systemd/user
+
+cp build/plasma-notification-mirror \
+  ~/.local/bin/plasma-notification-mirror
+
+cp systemd/plasma-notification-mirror.service \
+  ~/.config/systemd/user/
+
+systemctl --user daemon-reload
+systemctl --user enable --now plasma-notification-mirror.service
+```
 
 ## Configuration
 
-Optional configuration file:
+The optional configuration file is:
 
 ```text
 ~/.config/plasma-notification-mirror/config.ini
 ```
 
-Start from the included example:
+To start from the included example:
 
 ```bash
 mkdir -p ~/.config/plasma-notification-mirror
-cp config/config.example.ini ~/.config/plasma-notification-mirror/config.ini
+
+cp config/config.example.ini \
+  ~/.config/plasma-notification-mirror/config.ini
+
 systemctl --user restart plasma-notification-mirror.service
 ```
 
@@ -80,9 +106,9 @@ mode=secondary
 
 Available values:
 
-- `secondary` — first non-primary monitor; default and zero-config behavior
+- `secondary` — first non-primary monitor; default and zero-configuration behavior
 - `all-secondary` — every non-primary monitor
-- `screens` — only the monitor names in `screens=`
+- `screens` — only the monitors listed in `screens=`
 - `primary` — primary monitor only
 - `all` — every monitor
 
@@ -100,7 +126,7 @@ Monitor names can be viewed with:
 kscreen-doctor -o
 ```
 
-Other settings:
+### Other settings
 
 ```ini
 [General]
@@ -114,32 +140,91 @@ gap=12
 
 ## Testing
 
+Send a test notification:
+
 ```bash
-notify-send -i dialog-information "Mirror test" "This should appear on the configured mirror monitor."
+notify-send -i dialog-information \
+  "Mirror test" \
+  "This should appear on the configured mirror monitor."
 ```
 
-## Updating a running user install
-
-Replacing a currently executing binary directly can produce `Text file busy`. Use an atomic replacement:
+Check the service:
 
 ```bash
+systemctl --user status plasma-notification-mirror.service
+```
+
+Recent logs can be viewed with:
+
+```bash
+journalctl --user \
+  -u plasma-notification-mirror.service \
+  --no-pager \
+  -n 100
+```
+
+## Updating
+
+Pull and rebuild:
+
+```bash
+git pull
+
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
-cp build/plasma-notification-mirror ~/.local/bin/plasma-notification-mirror.new
+```
+
+If installed with `cmake --install`:
+
+```bash
+cmake --install build --prefix "$HOME/.local"
+systemctl --user daemon-reload
+systemctl --user restart plasma-notification-mirror.service
+```
+
+If you installed the binary manually, replacing a currently executing executable directly can produce `Text file busy`.
+
+Use an atomic replacement instead:
+
+```bash
+cp build/plasma-notification-mirror \
+  ~/.local/bin/plasma-notification-mirror.new
+
 chmod +x ~/.local/bin/plasma-notification-mirror.new
-mv -f ~/.local/bin/plasma-notification-mirror.new ~/.local/bin/plasma-notification-mirror
+
+mv -f \
+  ~/.local/bin/plasma-notification-mirror.new \
+  ~/.local/bin/plasma-notification-mirror
+
 systemctl --user restart plasma-notification-mirror.service
 ```
 
 ## Uninstall
 
+If installed under `~/.local` with CMake:
+
 ```bash
 systemctl --user disable --now plasma-notification-mirror.service
-rm -f ~/.config/systemd/user/plasma-notification-mirror.service
+
 rm -f ~/.local/bin/plasma-notification-mirror
+rm -f ~/.local/share/systemd/user/plasma-notification-mirror.service
+rm -rf ~/.local/share/plasma-notification-mirror
+
 systemctl --user daemon-reload
 ```
 
-The optional config directory can also be removed:
+For a manual installation:
+
+```bash
+systemctl --user disable --now plasma-notification-mirror.service
+
+rm -f ~/.config/systemd/user/plasma-notification-mirror.service
+rm -f ~/.local/bin/plasma-notification-mirror
+
+systemctl --user daemon-reload
+```
+
+The optional user configuration can also be removed:
 
 ```bash
 rm -rf ~/.config/plasma-notification-mirror
@@ -147,9 +232,25 @@ rm -rf ~/.config/plasma-notification-mirror
 
 ## Notes
 
-This is intentionally a notification **mirror**, not a replacement notification daemon. It does not attempt to duplicate notification action buttons or Plasma's notification history. It does track daemon-side notification replacement and close events so the mirror stays aligned with the notification service.
+Plasma Notification Mirror is intentionally a notification **mirror**, not a replacement notification daemon.
 
-Some applications provide icons differently. The program currently tries the standard `app_icon` field, `image-path`/`image_path` hints, desktop-entry metadata, and icon-theme fallbacks. Raw `image-data` pixel payloads are not decoded yet.
+It does not attempt to duplicate:
+
+- notification action buttons
+- Plasma's notification history
+- every internal Plasma notification UI behavior
+
+It does track daemon-side notification replacement and close events so mirrored popups remain aligned with the notification service.
+
+Some applications provide icons differently. The program currently tries:
+
+- the standard `app_icon` field
+- `image-path`
+- `image_path`
+- `desktop-entry`
+- icon-theme fallbacks
+
+Raw `image-data` pixel payloads are not decoded yet.
 
 ## License
 
