@@ -4,6 +4,10 @@ A small Wayland utility for KDE Plasma that mirrors desktop notification popups 
 
 Plasma normally shows a notification popup on only one monitor. Plasma Notification Mirror monitors accepted Freedesktop notification requests on the session D-Bus and draws lightweight, non-focus-stealing copies using KDE's `layer-shell-qt`.
 
+![Plasma Notification Mirror showing stacked mirrored notifications](docs/screenshot.png)
+
+*Mirrored KDE Plasma notifications on a secondary monitor.*
+
 ## Features
 
 - Zero-configuration two-monitor default: mirrors to the first non-primary monitor
