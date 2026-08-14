@@ -1,5 +1,7 @@
 # Plasma Notification Mirror
 
+[![Build](https://github.com/MysteriousAeon/plasma-notification-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/MysteriousAeon/plasma-notification-mirror/actions/workflows/build.yml)
+
 A small Wayland utility for KDE Plasma that mirrors desktop notification popups to one or more additional monitors.
 
 Plasma normally shows a notification popup on only one monitor. Plasma Notification Mirror monitors accepted Freedesktop notification requests on the session D-Bus and draws lightweight, non-focus-stealing copies using KDE's `layer-shell-qt`.
