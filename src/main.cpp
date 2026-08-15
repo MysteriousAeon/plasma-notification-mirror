@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScreen>
+#include <QSurfaceFormat>
 #include <QSocketNotifier>
 #include <QHash>
 #include <QSettings>
@@ -31,10 +32,14 @@ struct AppConfig
 {
     QString mode = QStringLiteral("secondary");
     QStringList screens;
+    QString position = QStringLiteral("bottom-right");
     int lifetimeMs = 5000;
     int width = 332;
     int maxNotifications = 5;
+    int backgroundOpacity = 100;
+    int leftMargin = 18;
     int rightMargin = 18;
+    int topMargin = 18;
     int bottomMargin = 58;
     int gap = 12;
 };
@@ -56,10 +61,17 @@ static AppConfig loadConfig()
 {
     AppConfig config;
 
-    const QString configDir =
-        QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
-        + QStringLiteral("/plasma-notification-mirror");
-    const QString configPath = configDir + QStringLiteral("/config.ini");
+    QString configPath =
+        qEnvironmentVariable("PLASMA_NOTIFICATION_MIRROR_CONFIG").trimmed();
+
+    if (configPath.isEmpty()) {
+        const QString configDir =
+            QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+            + QStringLiteral("/plasma-notification-mirror");
+        configPath = configDir + QStringLiteral("/config.ini");
+    } else {
+        qInfo() << "Using config override:" << configPath;
+    }
 
     if (!QFileInfo::exists(configPath)) {
         qInfo() << "No config file found; using zero-configuration defaults:" << configPath;
@@ -67,21 +79,57 @@ static AppConfig loadConfig()
     }
 
     QSettings settings(configPath, QSettings::IniFormat);
-    settings.beginGroup(QStringLiteral("General"));
 
     config.mode = settings.value(QStringLiteral("mode"), config.mode).toString().trimmed().toLower();
     config.screens = settings.value(QStringLiteral("screens"), QString()).toString().split(',', Qt::SkipEmptyParts);
     for (QString &screen : config.screens)
         screen = screen.trimmed();
 
+    config.position =
+        settings.value(QStringLiteral("position"), config.position)
+            .toString()
+            .trimmed()
+            .toLower();
+
+    const QStringList validPositions = {
+        QStringLiteral("top-left"),
+        QStringLiteral("top-right"),
+        QStringLiteral("bottom-left"),
+        QStringLiteral("bottom-right")
+    };
+
+    if (!validPositions.contains(config.position)) {
+        qWarning() << "Unknown position" << config.position
+                   << "; using 'bottom-right'.";
+        config.position = QStringLiteral("bottom-right");
+    }
+
     config.lifetimeMs = qBound(500, settings.value(QStringLiteral("lifetime_ms"), config.lifetimeMs).toInt(), 60000);
     config.width = qBound(220, settings.value(QStringLiteral("width"), config.width).toInt(), 900);
     config.maxNotifications = qBound(1, settings.value(QStringLiteral("max_notifications"), config.maxNotifications).toInt(), 20);
-    config.rightMargin = qBound(0, settings.value(QStringLiteral("right_margin"), config.rightMargin).toInt(), 500);
-    config.bottomMargin = qBound(0, settings.value(QStringLiteral("bottom_margin"), config.bottomMargin).toInt(), 1000);
+    config.backgroundOpacity =
+        qBound(0,
+               settings.value(QStringLiteral("background_opacity"),
+                              config.backgroundOpacity).toInt(),
+               100);
+
+    config.leftMargin =
+        qMax(0, settings.value(QStringLiteral("left_margin"), config.leftMargin).toInt());
+    config.rightMargin =
+        qMax(0, settings.value(QStringLiteral("right_margin"), config.rightMargin).toInt());
+    config.topMargin =
+        qMax(0, settings.value(QStringLiteral("top_margin"), config.topMargin).toInt());
+    config.bottomMargin =
+        qMax(0, settings.value(QStringLiteral("bottom_margin"), config.bottomMargin).toInt());
+
     config.gap = qBound(0, settings.value(QStringLiteral("gap"), config.gap).toInt(), 100);
 
-    settings.endGroup();
+    qInfo() << "Popup position:" << config.position;
+    qInfo() << "Margins:"
+            << "left=" << config.leftMargin
+            << "right=" << config.rightMargin
+            << "top=" << config.topMargin
+            << "bottom=" << config.bottomMargin;
 
     return config;
 }
@@ -270,7 +318,7 @@ class NotificationOverlay : public QWindow
 public:
     NotificationOverlay(
         QScreen *screen,
-        int bottomMargin,
+        int stackMargin,
         const NotificationData &data,
         const AppConfig &config,
         std::function<void(NotificationOverlay *)> onClose)
@@ -285,20 +333,42 @@ public:
         notificationIcon = resolveNotificationIcon(notification);
 
         setSurfaceType(QWindow::RasterSurface);
+
+        QSurfaceFormat surfaceFormat = format();
+        surfaceFormat.setAlphaBufferSize(8);
+        setFormat(surfaceFormat);
+
         setFlags(Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
         setScreen(screen);
         resize(config.width, popupHeight);
 
         layerWindow = LayerShellQt::Window::get(this);
+
+        const bool anchorTop = config.position.startsWith(QStringLiteral("top-"));
+        const bool anchorLeft = config.position.endsWith(QStringLiteral("-left"));
+
         LayerShellQt::Window::Anchors anchors;
-        anchors.setFlag(LayerShellQt::Window::AnchorBottom);
-        anchors.setFlag(LayerShellQt::Window::AnchorRight);
+        anchors.setFlag(
+            anchorTop
+                ? LayerShellQt::Window::AnchorTop
+                : LayerShellQt::Window::AnchorBottom);
+        anchors.setFlag(
+            anchorLeft
+                ? LayerShellQt::Window::AnchorLeft
+                : LayerShellQt::Window::AnchorRight);
+
         layerWindow->setAnchors(anchors);
         layerWindow->setLayer(LayerShellQt::Window::LayerTop);
         layerWindow->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
         layerWindow->setExclusiveZone(-1);
         layerWindow->setDesiredSize(QSize(config.width, popupHeight));
-        layerWindow->setMargins(QMargins(0, 0, config.rightMargin, bottomMargin));
+
+        const int left = anchorLeft ? config.leftMargin : 0;
+        const int right = anchorLeft ? 0 : config.rightMargin;
+        const int top = anchorTop ? stackMargin : 0;
+        const int bottom = anchorTop ? 0 : stackMargin;
+
+        layerWindow->setMargins(QMargins(left, top, right, bottom));
 
         hideTimer.setSingleShot(true);
         QObject::connect(&hideTimer, &QTimer::timeout, this, [this]() { closeOverlay(); });
@@ -485,7 +555,9 @@ private:
         painter.fillRect(rect, Qt::transparent);
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
-        painter.setBrush(QColor(35, 38, 41, 242));
+        const int backgroundAlpha =
+            qRound(255.0 * config.backgroundOpacity / 100.0);
+        painter.setBrush(QColor(35, 38, 41, backgroundAlpha));
         painter.setPen(Qt::NoPen);
         painter.drawRoundedRect(QRectF(0, 0, width(), height()), 9, 9);
 
@@ -632,18 +704,25 @@ private:
             overlay->deleteLater();
         }
 
+        const bool stackFromTop =
+            config.position.startsWith(QStringLiteral("top-"));
+        const int baseMargin =
+            stackFromTop ? config.topMargin : config.bottomMargin;
+
         int accumulatedHeight = 0;
         for (int i = 0; i < notifications.size(); ++i) {
-            const int bottom = config.bottomMargin + accumulatedHeight;
+            const int stackMargin = baseMargin + accumulatedHeight;
             auto *overlay = new NotificationOverlay(
                 screen,
-                bottom,
+                stackMargin,
                 notifications.at(i),
                 config,
                 [this](NotificationOverlay *item) { overlayClosed(item); });
             overlays.append(overlay);
             overlay->showNotification();
-            accumulatedHeight += calculatePopupHeight(notifications.at(i), config.width) + config.gap;
+            accumulatedHeight +=
+                calculatePopupHeight(notifications.at(i), config.width)
+                + config.gap;
         }
 
         rebuilding = false;
