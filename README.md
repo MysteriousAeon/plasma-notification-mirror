@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/MysteriousAeon/plasma-notification-mirror/actions/workflows/build.yml/badge.svg)](https://github.com/MysteriousAeon/plasma-notification-mirror/actions/workflows/build.yml)
 
-A small Wayland utility for KDE Plasma that mirrors desktop notification popups to one or more additional monitors.
+A small Wayland utility for KDE Plasma that mirrors desktop notification popups to one or more monitors.
 
 Plasma normally shows a notification popup on only one monitor. Plasma Notification Mirror monitors accepted Freedesktop notification requests on the session D-Bus and draws lightweight, non-focus-stealing copies using KDE's `layer-shell-qt`.
 
@@ -14,16 +14,25 @@ Plasma normally shows a notification popup on only one monitor. Plasma Notificat
 
 - Zero-configuration two-monitor default: mirrors to the first non-primary monitor
 - Optional multi-monitor modes
+- Configurable popup corner:
+  - top-left
+  - top-right
+  - bottom-left
+  - bottom-right
+- Independent margins for all four screen edges
+- Unrestricted margin offsets for large and high-resolution displays
+- Configurable popup background opacity
 - Per-monitor notification stacking
 - Dynamic popup height
 - KDE-like compact layout and expiration bar
+- Transparent rounded corners
 - Countdown pauses while the pointer is over a popup
 - Manual close button
 - Existing notifications compact when one is dismissed
 - Application icon support via `app_icon`, `image-path` / `image_path`, and `desktop-entry` fallbacks
 - Typed D-Bus monitoring: notifications are mirrored only after the notification daemon accepts them and returns their notification ID
 - Handles notification replacement and `NotificationClosed` events
-- Configurable width, lifetime, margins, stack gap, and maximum popup count
+- Configurable width, lifetime, stack gap, and maximum popup count
 - User-level systemd service
 - No root process required
 
@@ -65,7 +74,7 @@ systemctl --user enable --now plasma-notification-mirror.service
 
 No configuration file is required.
 
-With two monitors, the first non-primary monitor is selected automatically.
+With two monitors, the first non-primary monitor is selected automatically and notifications appear in the bottom-right corner using the built-in defaults.
 
 ### Manual installation
 
@@ -132,6 +141,61 @@ Monitor names can be viewed with:
 kscreen-doctor -o
 ```
 
+### Popup position
+
+```ini
+[General]
+position=bottom-right
+```
+
+Available values:
+
+- `top-left`
+- `top-right`
+- `bottom-left`
+- `bottom-right` — default
+
+Notifications stack away from the selected corner. For example, notifications positioned at the top of the screen stack downward, while notifications positioned at the bottom stack upward.
+
+### Margins
+
+Each screen edge has its own margin:
+
+```ini
+[General]
+left_margin=18
+right_margin=18
+top_margin=18
+bottom_margin=58
+```
+
+Only the two margins relevant to the selected corner are used.
+
+For example:
+
+```ini
+[General]
+position=top-right
+right_margin=24
+top_margin=32
+```
+
+Margin values are not artificially capped, so large offsets can be used on high-resolution or unusual monitor layouts.
+
+### Background opacity
+
+```ini
+[General]
+background_opacity=100
+```
+
+`background_opacity` accepts values from `0` to `100`:
+
+- `100` — fully opaque; default
+- `0` — fully transparent
+
+Values between them produce a translucent popup background. Rounded areas outside the notification card remain transparent.
+
 ### Other settings
 
 ```ini
@@ -139,8 +203,36 @@ kscreen-doctor -o
 lifetime_ms=5000
 width=332
 max_notifications=5
+gap=12
+```
+
+Defaults:
+
+- `lifetime_ms=5000` — popup lifetime in milliseconds
+- `width=332` — popup width in pixels
+- `max_notifications=5` — maximum simultaneous mirrored notifications per target monitor
+- `gap=12` — space between stacked notifications in pixels
+
+### Full configuration example
+
+```ini
+[General]
+
+mode=secondary
+screens=
+
+position=bottom-right
+
+lifetime_ms=5000
+width=332
+max_notifications=5
+background_opacity=100
+
+left_margin=18
 right_margin=18
+top_margin=18
 bottom_margin=58
+
 gap=12
 ```
 
@@ -152,6 +244,14 @@ Send a test notification:
 notify-send -i dialog-information \
   "Mirror test" \
   "This should appear on the configured mirror monitor."
+```
+
+Send several notifications to test stacking:
+
+```bash
+notify-send -a "Mirror Test" -i dialog-information "Notification 1" "First item"
+notify-send -a "Mirror Test" -i dialog-information "Notification 2" "Second item"
+notify-send -a "Mirror Test" -i dialog-information "Notification 3" "Third item"
 ```
 
 Check the service:
